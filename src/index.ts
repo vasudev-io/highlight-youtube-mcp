@@ -10,6 +10,9 @@ import {
 } from '@highlight-ai/mcp-sdk/types.js'
 import { z } from 'zod'
 import { YoutubeTranscript } from 'youtube-transcript'
+import ytdl from 'ytdl-core'
+import fs from 'fs'
+import path from 'path'
 
 /**
  * Helper function to extract video ID from YouTube URL
@@ -35,6 +38,36 @@ export async function getTranscript(url: string): Promise<string> {
         return transcript.map((item) => item.text).join(' ')
     } catch (error) {
         throw new Error(`Failed to get transcript: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+}
+
+/**
+ * Download video from a YouTube video URL
+ */
+export async function downloadVideo(url: string): Promise<string> {
+    if (!url) {
+        throw new Error('URL is required')
+    }
+
+    try {
+        const videoId = getVideoId(url)
+        const videoInfo = await ytdl.getInfo(videoId)
+        const videoTitle = videoInfo.videoDetails.title.replace(/[^a-zA-Z0-9]/g, '_')
+        const filePath = path.resolve(__dirname, `${videoTitle}.mp4`)
+
+        const videoStream = ytdl(videoId, { quality: 'highest' })
+        const fileStream = fs.createWriteStream(filePath)
+
+        videoStream.pipe(fileStream)
+
+        await new Promise((resolve, reject) => {
+            fileStream.on('finish', resolve)
+            fileStream.on('error', reject)
+        })
+
+        return filePath
+    } catch (error) {
+        throw new Error(`Failed to download video: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
 }
 
@@ -92,25 +125,51 @@ class YoutubeTranscriptServer {
                         required: ['videoUrl'],
                     },
                 },
+                {
+                    name: 'download_youtube_video',
+                    description: 'Downloads a YouTube video and returns the file path.',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            videoUrl: {
+                                type: 'string',
+                                description: 'The full URL of the YouTube video (supports both youtube.com and youtu.be formats). Example: https://www.youtube.com/watch?v=<video_id>',
+                            },
+                        },
+                        required: ['videoUrl'],
+                    },
+                },
             ],
         }))
 
         // Handle tool calls
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            if (request.params.name !== 'get_youtube_transcript') {
+            if (request.params.name === 'get_youtube_transcript') {
+                const url = String(request.params.arguments?.videoUrl)
+                const transcriptText = await getTranscript(url)
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: transcriptText,
+                        },
+                    ],
+                }
+            } else if (request.params.name === 'download_youtube_video') {
+                const url = String(request.params.arguments?.videoUrl)
+                const filePath = await downloadVideo(url)
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Video downloaded to: ${filePath}`,
+                        },
+                    ],
+                }
+            } else {
                 throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`)
-            }
-
-            const url = String(request.params.arguments?.videoUrl)
-            const transcriptText = await getTranscript(url)
-
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: transcriptText,
-                    },
-                ],
             }
         })
     }

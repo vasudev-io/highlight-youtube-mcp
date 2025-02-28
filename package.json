@@ -10,7 +10,8 @@
     "dependencies": {
         "@highlight-ai/mcp-sdk": "^0.0.7",
         "youtube-transcript": "^1.2.1",
-        "zod-to-json-schema": "^3.23.5"
+        "zod-to-json-schema": "^3.23.5",
+        "ytdl-core": "^4.9.1"
     },
     "devDependencies": {
         "@types/jest": "^29.5.11",
